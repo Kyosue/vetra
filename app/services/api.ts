@@ -41,7 +41,7 @@ interface Sale {
 }
 
 // Use environment variable for API URL, fallback to development URL
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.0.247:3000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://vetra-l87p.onrender.com/api';
 
 // Navigation utility
 const handleAuthError = async () => {
