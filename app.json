@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "Vetra",
-    "slug": "Vetra",
+    "name": "Vetra POS",
+    "slug": "vetrapos",
+    "owner": "reymundabelgas",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/vetra-app-icon.png",
@@ -63,7 +64,7 @@
         "origin": false
       },
       "eas": {
-        "projectId": "81e851f9-ac8c-4b29-aa84-eaf54ed67ca7"
+        "projectId": "b96f60d1-891d-4a00-a6a4-a5c666859f80"
       }
     }
   }

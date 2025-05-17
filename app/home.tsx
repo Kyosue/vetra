@@ -3,16 +3,20 @@ import { useFonts } from 'expo-font';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Dimensions,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { authService, productService, salesService } from './services/api';
+import { authService, productService, salesService, userService } from './services/api';
+
+// Get screen dimensions for responsive layout
+const { width } = Dimensions.get('window');
 
 interface Product {
   _id: string;
@@ -43,6 +47,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
+  const [userName, setUserName] = useState('');
   const [dailyStats, setDailyStats] = useState({
     totalSales: 0,
     orderCount: 0
@@ -56,6 +61,7 @@ export default function HomeScreen() {
   useEffect(() => {
     fetchProducts();
     fetchSales();
+    fetchUserInfo();
   }, []);
 
   const fetchProducts = async () => {
@@ -92,6 +98,20 @@ export default function HomeScreen() {
       console.error('Error fetching sales:', error);
     }
   };
+  
+  const fetchUserInfo = async () => {
+    try {
+      // Get user profile from userService
+      const userProfile = await userService.getProfile();
+      if (userProfile && userProfile.fullName) {
+        // Extract first name from full name
+        const firstName = userProfile.fullName.split(' ')[0];
+        setUserName(firstName);
+      }
+    } catch (error) {
+      console.error('Error fetching user info:', error);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -120,6 +140,14 @@ export default function HomeScreen() {
     return `${time} • ${formattedDate}`;
   };
 
+  // Format currency with thousands separators
+  const formatCurrency = (amount: number): string => {
+    return amount.toLocaleString('en-PH', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  };
+
   if (!fontsLoaded) {
     return null;
   }
@@ -132,10 +160,14 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>Vetra</Text>
-          <View style={styles.statusContainer}>
-            <View style={[styles.statusDot, { backgroundColor: isOnline ? '#4CAF50' : '#FF5252' }]} />
-            <Text style={styles.statusText}>{isOnline ? 'Online' : 'Offline'}</Text>
-          </View>
+          {userName ? (
+            <Text style={styles.greetingText}>Hello, {userName}!</Text>
+          ) : (
+            <View style={styles.statusContainer}>
+              <View style={[styles.statusDot, { backgroundColor: isOnline ? '#4CAF50' : '#FF5252' }]} />
+              <Text style={styles.statusText}>{isOnline ? 'Online' : 'Offline'}</Text>
+            </View>
+          )}
         </View>
         <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
           {loading ? (
@@ -147,23 +179,29 @@ export default function HomeScreen() {
       </View>
 
       {/* Main Content */}
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Quick Stats */}
         <View style={styles.statsContainer}>
           <View style={[styles.statCard, styles.salesCard]}>
             <View style={styles.statHeader}>
               <Text style={styles.statLabel}>Today's Sales</Text>
               <View style={styles.statIconContainer}>
-                <Ionicons name="cash-outline" size={24} color="#fff" />
+                <Ionicons name="cash-outline" size={22} color="#fff" />
               </View>
             </View>
-            <Text style={styles.statValue}>₱{dailyStats.totalSales.toFixed(2)}</Text>
+            <Text 
+              style={styles.statValue} 
+              numberOfLines={1} 
+              adjustsFontSizeToFit
+            >
+              ₱{formatCurrency(dailyStats.totalSales)}
+            </Text>
           </View>
           <View style={[styles.statCard, styles.ordersCard]}>
             <View style={styles.statHeader}>
               <Text style={styles.statLabel}>Orders</Text>
               <View style={styles.statIconContainer}>
-                <Ionicons name="cart-outline" size={24} color="#fff" />
+                <Ionicons name="cart-outline" size={22} color="#fff" />
               </View>
             </View>
             <Text style={styles.statValue}>{dailyStats.orderCount}</Text>
@@ -178,73 +216,94 @@ export default function HomeScreen() {
               <Text style={styles.sectionSubtitle}>Access key features</Text>
             </View>
             <View style={styles.sectionIconContainer}>
-              <Ionicons name="flash" size={24} color="#FF9F43" />
+              <Ionicons name="flash" size={22} color="#FF9F43" />
             </View>
           </View>
           <View style={styles.quickActions}>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => router.push('/new-sale')}
-            >
-              <View style={[styles.actionIconContainer, { backgroundColor: '#FFF5EB' }]}>
-                <Ionicons name="cart-outline" size={24} color="#FF9F43" />
-              </View>
-              <View style={styles.actionTextContainer}>
-                <Text style={styles.actionText}>New Sale</Text>
-                <Text style={styles.actionSubtext}>Start transaction</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => router.push('/inventory')}
-            >
-              <View style={[styles.actionIconContainer, { backgroundColor: '#E8F5E9' }]}>
-                <Ionicons name="list-outline" size={24} color="#4CAF50" />
-              </View>
-              <View style={styles.actionTextContainer}>
-                <Text style={styles.actionText}>Inventory</Text>
-                <Text style={styles.actionSubtext}>Manage stock</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => router.push('/reports')}
-            >
-              <View style={[styles.actionIconContainer, { backgroundColor: '#E3F2FD' }]}>
-                <Ionicons name="bar-chart-outline" size={24} color="#2196F3" />
-              </View>
-              <View style={styles.actionTextContainer}>
-                <Text style={styles.actionText}>Reports</Text>
-                <Text style={styles.actionSubtext}>View analytics</Text>
-              </View>
-            </TouchableOpacity>
+            {[
+              {
+                icon: "cart-outline" as const,
+                text: "New Sale",
+                subtext: "Start transaction",
+                color: "#FF9F43",
+                bgColor: "#FFF5EB",
+                onPress: () => router.push('/new-sale')
+              },
+              {
+                icon: "list-outline" as const,
+                text: "Inventory",
+                subtext: "Manage stock",
+                color: "#4CAF50",
+                bgColor: "#E8F5E9",
+                onPress: () => router.push('/inventory')
+              },
+              {
+                icon: "bar-chart-outline" as const,
+                text: "Reports",
+                subtext: "View analytics",
+                color: "#2196F3",
+                bgColor: "#E3F2FD",
+                onPress: () => router.push('/reports')
+              }
+            ].map((action, index) => (
+              <TouchableOpacity 
+                key={index}
+                style={styles.actionButton}
+                onPress={action.onPress}
+              >
+                <View style={[styles.actionIconContainer, { backgroundColor: action.bgColor }]}>
+                  <Ionicons name={action.icon} size={24} color={action.color} />
+                </View>
+                <View style={styles.actionTextContainer}>
+                  <Text style={styles.actionText}>{action.text}</Text>
+                  <Text style={styles.actionSubtext}>{action.subtext}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
         {/* Recent Transactions */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            <View style={styles.sectionTitleContainer}>
+              <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            </View>
             <TouchableOpacity 
               style={styles.viewAllButton}
               onPress={() => router.push('/reports')}
             >
               <Text style={styles.viewAllText}>View All</Text>
+              <Ionicons name="chevron-forward" size={16} color="#FF9F43" />
             </TouchableOpacity>
           </View>
           <View style={styles.transactionList}>
             {recentSales.length === 0 ? (
-              <Text style={styles.emptyText}>No recent transactions</Text>
+              <View style={styles.emptyContainer}>
+                <Ionicons name="receipt-outline" size={32} color="#CCC" />
+                <Text style={styles.emptyText}>No recent transactions</Text>
+              </View>
             ) : (
-              recentSales.slice(0, 5).map((sale) => (
-                <View key={sale._id} style={styles.transactionItem}>
-                  <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionTime}>{formatDate(sale.date)}</Text>
-                    <Text style={styles.transactionItems}>
-                      {sale.items.length} {sale.items.length === 1 ? 'item' : 'items'}
-                    </Text>
+              recentSales.slice(0, 5).map((sale, index) => (
+                <View 
+                  key={sale._id} 
+                  style={[
+                    styles.transactionItem,
+                    index === recentSales.slice(0, 5).length - 1 && styles.lastTransaction
+                  ]}
+                >
+                  <View style={styles.transactionLeft}>
+                    <View style={styles.transactionIcon}>
+                      <Ionicons name="receipt-outline" size={18} color="#FF9F43" />
+                    </View>
+                    <View style={styles.transactionInfo}>
+                      <Text style={styles.transactionTime}>{formatDate(sale.date)}</Text>
+                      <Text style={styles.transactionItems}>
+                        {sale.items.length} {sale.items.length === 1 ? 'item' : 'items'}
+                      </Text>
+                    </View>
                   </View>
-                  <Text style={styles.transactionAmount}>₱{sale.totalAmount.toFixed(2)}</Text>
+                  <Text style={styles.transactionAmount}>₱{formatCurrency(sale.totalAmount)}</Text>
                 </View>
               ))
             )}
@@ -262,16 +321,22 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#FF9F43',
-    padding: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   headerLeft: {
     flexDirection: 'column',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 26,
     fontFamily: 'Outfit-Bold',
     color: '#fff',
     marginBottom: 4,
@@ -279,6 +344,10 @@ const styles = StyleSheet.create({
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
   },
   statusDot: {
     width: 8,
@@ -291,30 +360,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Outfit-Regular',
   },
+  greetingText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'Outfit-Regular',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
   logoutButton: {
-    padding: 8,
+    padding: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
   },
   content: {
     flex: 1,
-    padding: 16,
+    padding: 20,
   },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 24,
-    paddingHorizontal: 8,
+    marginBottom: 28,
   },
   statCard: {
-    backgroundColor: '#fff',
     borderRadius: 20,
-    padding: 16,
-    flex: 1,
-    marginHorizontal: 8,
+    padding: 20,
+    flex: 0.48,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 6,
   },
   salesCard: {
     backgroundColor: '#FF9F43',
@@ -326,85 +403,87 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   statIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 28,
+    fontSize: 26,
     fontFamily: 'Outfit-Bold',
     color: '#fff',
     textAlign: 'left',
   },
   statLabel: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: 'Outfit-Regular',
     color: 'rgba(255, 255, 255, 0.9)',
   },
   section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'Outfit-Bold',
-    color: '#2C3E50',
-    marginBottom: 16,
+    marginBottom: 28,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-    paddingHorizontal: 4,
+    marginBottom: 16,
   },
   sectionTitleContainer: {
     flex: 1,
   },
+  sectionTitle: {
+    fontSize: 20,
+    fontFamily: 'Outfit-Bold',
+    color: '#2C3E50',
+    marginBottom: 4,
+  },
   sectionSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: 'Outfit-Regular',
     color: '#666',
-    marginTop: 2,
   },
   sectionIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     backgroundColor: '#FFF5EB',
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 12,
+    elevation: 2,
+    shadowColor: '#FF9F43',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
   quickActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 4,
   },
   actionButton: {
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
-    width: '31%',
+    width: width * 0.28,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
     shadowRadius: 6,
-    elevation: 3,
+    elevation: 4,
   },
   actionIconContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 54,
+    height: 54,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   actionTextContainer: {
     alignItems: 'center',
@@ -414,46 +493,75 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit-Bold',
     color: '#2C3E50',
     marginBottom: 4,
+    textAlign: 'center',
   },
   actionSubtext: {
     fontSize: 12,
     fontFamily: 'Outfit-Regular',
     color: '#666',
+    textAlign: 'center',
   },
   transactionList: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 6,
+    elevation: 3,
     minHeight: 100,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 8,
+    backgroundColor: 'rgba(255, 159, 67, 0.1)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
   },
   viewAllText: {
     color: '#FF9F43',
     fontSize: 14,
-    fontFamily: 'Outfit-Regular',
+    fontFamily: 'Outfit-Bold',
+    marginRight: 4,
+  },
+  emptyContainer: {
+    alignItems: 'center', 
+    justifyContent: 'center',
+    padding: 20,
   },
   emptyText: {
     fontSize: 14,
     fontFamily: 'Outfit-Regular',
     color: '#666',
     textAlign: 'center',
+    marginTop: 8,
   },
   transactionItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+  },
+  lastTransaction: {
+    borderBottomWidth: 0,
+  },
+  transactionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  transactionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 159, 67, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   transactionInfo: {
     flex: 1,

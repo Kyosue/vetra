@@ -8,6 +8,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Image,
   SafeAreaView,
   ScrollView,
@@ -20,6 +21,9 @@ import {
 } from 'react-native';
 import { productService } from './services/api';
 
+// Get screen dimensions for responsive layout
+const { width } = Dimensions.get('window');
+
 interface Product {
   _id: string;
   name: string;
@@ -29,6 +33,14 @@ interface Product {
 }
 
 export default function InventoryScreen() {
+  // Format currency with thousands separators
+  const formatCurrency = (amount: number): string => {
+    return amount.toLocaleString('en-PH', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  };
+
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
@@ -361,13 +373,20 @@ export default function InventoryScreen() {
     setFilteredProducts(filtered);
   };
 
+  const toggleSortOrder = () => {
+    setSortOrder(prevSortOrder => prevSortOrder === 'asc' ? 'desc' : 'asc');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#FF9F43" />
       
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity 
+          onPress={() => router.back()} 
+          style={styles.backButton}
+        >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Inventory</Text>
@@ -379,157 +398,247 @@ export default function InventoryScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search products..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholderTextColor="#999"
-        />
+      {/* Filter and Search Bar */}
+      <View style={styles.filterContainer}>
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search products..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#999"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity 
+              onPress={() => setSearchQuery('')}
+              style={styles.clearButton}
+            >
+              <Ionicons name="close-circle" size={20} color="#999" />
+            </TouchableOpacity>
+          )}
+        </View>
+        
+        <View style={styles.filterButtons}>
+          <TouchableOpacity 
+            style={styles.filterButton}
+            onPress={() => {
+              setSortBy('name');
+              toggleSortOrder();
+            }}
+          >
+            <Ionicons 
+              name="text" 
+              size={20} 
+              color="#FF9F43" 
+            />
+            <Text style={styles.filterButtonText}>Name</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.filterButton}
+            onPress={() => {
+              setSortBy('price');
+              toggleSortOrder();
+            }}
+          >
+            <Ionicons 
+              name="cash-outline" 
+              size={20} 
+              color="#FF9F43" 
+            />
+            <Text style={styles.filterButtonText}>Price</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.filterButton}
+            onPress={() => toggleSortOrder()}
+          >
+            <Ionicons 
+              name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'} 
+              size={20} 
+              color="#FF9F43" 
+            />
+            <Text style={styles.filterButtonText}>
+              {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Add/Edit Product Form */}
-      {(showAddProduct || editingProduct) && (
-        <View style={styles.addProductContainer}>
-          <Text style={styles.sectionTitle}>
-            {editingProduct ? 'Edit Product' : 'Add New Product'}
-          </Text>
-          
-          {/* Image Section */}
-          <View style={styles.imageSection}>
-            {newProduct.imageUrl ? (
-              <Image source={{ uri: newProduct.imageUrl }} style={styles.productImage} />
-            ) : (
-              <View style={styles.imagePlaceholder}>
-                <Ionicons name="image-outline" size={40} color="#999" />
-                <Text style={styles.imagePlaceholderText}>Add Product Image</Text>
-              </View>
-            )}
-            <View style={styles.imageButtons}>
-              <TouchableOpacity 
-                key="gallery-button" 
-                style={styles.imageButton} 
-                onPress={pickImage}
-              >
-                <Ionicons name="images-outline" size={20} color="#FF9F43" />
-                <Text style={styles.imageButtonText}>Gallery</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                key="camera-button" 
-                style={styles.imageButton} 
-                onPress={takePhoto}
-              >
-                <Ionicons name="camera-outline" size={20} color="#FF9F43" />
-                <Text style={styles.imageButtonText}>Camera</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={[styles.input, validationErrors.name ? styles.inputError : null]}
-              placeholder="Product Name"
-              value={newProduct.name}
-              onChangeText={(text) => setNewProduct({ ...newProduct, name: text })}
-              placeholderTextColor="#999"
-            />
-            {validationErrors.name ? (
-              <Text style={styles.errorText}>{validationErrors.name}</Text>
-            ) : null}
-          </View>
-
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={[styles.input, validationErrors.price ? styles.inputError : null]}
-              placeholder="Price"
-              value={newProduct.price}
-              onChangeText={(text) => setNewProduct({ ...newProduct, price: text })}
-              keyboardType="decimal-pad"
-              placeholderTextColor="#999"
-            />
-            {validationErrors.price ? (
-              <Text style={styles.errorText}>{validationErrors.price}</Text>
-            ) : null}
-          </View>
-
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={[styles.input, validationErrors.category ? styles.inputError : null]}
-              placeholder="Category"
-              value={newProduct.category}
-              onChangeText={(text) => setNewProduct({ ...newProduct, category: text })}
-              placeholderTextColor="#999"
-            />
-            {validationErrors.category ? (
-              <Text style={styles.errorText}>{validationErrors.category}</Text>
-            ) : null}
-          </View>
-
-          <View style={styles.formButtons}>
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={editingProduct ? closeEditModal : () => setShowAddProduct(false)}
-            >
-              <Text style={styles.buttonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, styles.saveButton]}
-              onPress={editingProduct ? handleEditProduct : handleAddProduct}
-            >
-              <Text style={styles.buttonText}>{editingProduct ? 'Save' : 'Add'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Product List */}
-      <ScrollView style={styles.content}>
-        {loading ? (
-          <ActivityIndicator size="large" color="#FF9F43" style={styles.loader} />
-        ) : (
-          filteredProducts.map((product, index) => (
-            <View key={`product-${product._id}-${index}`} style={styles.productCard}>
-              {product.imageUrl ? (
-                <Image 
-                  key={`image-${product._id}-${index}`}
-                  source={{ uri: product.imageUrl }} 
-                  style={styles.productListImage} 
-                />
-              ) : (
-                <View key={`placeholder-${product._id}-${index}`} style={styles.productListImagePlaceholder}>
-                  <Ionicons name="image-outline" size={24} color="#999" />
+      {/* Main Content */}
+      {(showAddProduct || editingProduct) ? (
+        // Add/Edit Product Form in ScrollView
+        <View style={{ flex: 1 }}>
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            <View style={styles.addProductContainer}>
+              <Text style={styles.sectionTitle}>
+                {editingProduct ? 'Edit Product' : 'Add New Product'}
+              </Text>
+              
+              {/* Image Section */}
+              <View style={styles.imageSection}>
+                {newProduct.imageUrl ? (
+                  <View style={styles.imageContainer}>
+                    <Image source={{ uri: newProduct.imageUrl }} style={styles.productImage} />
+                    <TouchableOpacity 
+                      style={styles.removeImageButton}
+                      onPress={() => setNewProduct({...newProduct, imageUrl: ''})}
+                    >
+                      <Ionicons name="close-circle" size={26} color="#FF3B30" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.imagePlaceholder}>
+                    <Ionicons name="image-outline" size={40} color="#ddd" />
+                    <Text style={styles.imagePlaceholderText}>Add Product Image</Text>
+                  </View>
+                )}
+                <View style={styles.imageButtons}>
+                  <TouchableOpacity 
+                    style={styles.imageButton} 
+                    onPress={pickImage}
+                  >
+                    <Ionicons name="images-outline" size={20} color="#FF9F43" />
+                    <Text style={styles.imageButtonText}>Gallery</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.imageButton} 
+                    onPress={takePhoto}
+                  >
+                    <Ionicons name="camera-outline" size={20} color="#FF9F43" />
+                    <Text style={styles.imageButtonText}>Camera</Text>
+                  </TouchableOpacity>
                 </View>
-              )}
-              <View key={`info-${product._id}-${index}`} style={styles.productInfo}>
-                <Text style={styles.productName}>{product.name}</Text>
-                <Text style={styles.productCategory}>{product.category}</Text>
               </View>
-              <View key={`details-${product._id}-${index}`} style={styles.productDetails}>
-                <Text style={styles.productPrice}>₱{product.price.toFixed(2)}</Text>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Product Name</Text>
+                <TextInput
+                  style={[styles.input, validationErrors.name ? styles.inputError : null]}
+                  placeholder="Enter product name"
+                  value={newProduct.name}
+                  onChangeText={(text) => setNewProduct({ ...newProduct, name: text })}
+                  placeholderTextColor="#999"
+                />
+                {validationErrors.name ? (
+                  <Text style={styles.errorText}>{validationErrors.name}</Text>
+                ) : null}
               </View>
-              <View key={`actions-${product._id}-${index}`} style={styles.productActions}>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Price</Text>
+                <TextInput
+                  style={[styles.input, validationErrors.price ? styles.inputError : null]}
+                  placeholder="Enter price"
+                  value={newProduct.price}
+                  onChangeText={(text) => setNewProduct({ ...newProduct, price: text })}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor="#999"
+                />
+                {validationErrors.price ? (
+                  <Text style={styles.errorText}>{validationErrors.price}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Category</Text>
+                <TextInput
+                  style={[styles.input, validationErrors.category ? styles.inputError : null]}
+                  placeholder="Enter category"
+                  value={newProduct.category}
+                  onChangeText={(text) => setNewProduct({ ...newProduct, category: text })}
+                  placeholderTextColor="#999"
+                />
+                {validationErrors.category ? (
+                  <Text style={styles.errorText}>{validationErrors.category}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.formButtons}>
                 <TouchableOpacity
-                  key={`edit-${product._id}-${index}`}
-                  style={styles.editButton}
-                  onPress={() => openEditModal(product)}
+                  style={[styles.button, styles.cancelButton]}
+                  onPress={editingProduct ? closeEditModal : () => setShowAddProduct(false)}
                 >
-                  <Ionicons name="pencil-outline" size={20} color="#FF9F43" />
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  key={`delete-${product._id}-${index}`}
-                  style={styles.deleteButton}
-                  onPress={() => handleDeleteProduct(product._id)}
+                  style={[styles.button, styles.saveButton]}
+                  onPress={editingProduct ? handleEditProduct : handleAddProduct}
                 >
-                  <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+                  <Text style={styles.saveButtonText}>{editingProduct ? 'Save Changes' : 'Add Product'}</Text>
                 </TouchableOpacity>
               </View>
+              
+              {/* Add some padding at the bottom for better scrolling */}
+              <View style={{ height: 30 }}/>
             </View>
-          ))
-        )}
-      </ScrollView>
+          </ScrollView>
+        </View>
+      ) : (
+        // Product List
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {loading ? (
+            <View style={styles.loaderContainer}>
+              <ActivityIndicator size="large" color="#FF9F43" style={styles.loader} />
+              <Text style={styles.loaderText}>Loading products...</Text>
+            </View>
+          ) : filteredProducts.length === 0 ? (
+            <View style={styles.emptyProducts}>
+              <Ionicons name="cube-outline" size={64} color="#ddd" />
+              <Text style={styles.emptyProductsText}>
+                No products found{'\n'}
+                {searchQuery ? `for "${searchQuery}"` : ''}
+              </Text>
+              <TouchableOpacity 
+                style={styles.addFirstButton}
+                onPress={() => setShowAddProduct(true)}
+              >
+                <Ionicons name="add-circle-outline" size={22} color="#fff" />
+                <Text style={styles.addFirstButtonText}>Add Your First Product</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            filteredProducts.map((product, index) => (
+              <View key={`product-${product._id}-${index}`} style={styles.productCard}>
+                <View style={styles.productMain}>
+                  <View style={styles.productImageWrapper}>
+                    {product.imageUrl ? (
+                      <Image 
+                        source={{ uri: product.imageUrl }} 
+                        style={styles.productListImage} 
+                      />
+                    ) : (
+                      <View style={styles.productListImagePlaceholder}>
+                        <Ionicons name="image-outline" size={24} color="#ddd" />
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.productInfo}>
+                    <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
+                    <View style={styles.categoryPill}>
+                      <Text style={styles.productCategory}>{product.category}</Text>
+                    </View>
+                    <Text style={styles.productPrice}>₱{formatCurrency(product.price)}</Text>
+                  </View>
+                </View>
+                <View style={styles.productActions}>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => openEditModal(product)}
+                  >
+                    <Ionicons name="create-outline" size={20} color="#2196F3" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => handleDeleteProduct(product._id)}
+                  >
+                    <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -541,24 +650,32 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#FF9F43',
-    padding: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   backButton: {
-    padding: 8,
+    padding: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontFamily: 'Outfit-Bold',
     color: '#fff',
   },
   addButton: {
     backgroundColor: '#fff',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -567,34 +684,64 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  filterContainer: {
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    margin: 16,
-    borderRadius: 25,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
     paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 12,
   },
   searchIcon: {
     marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    height: 45,
-    fontSize: 14,
+    height: 44,
+    fontSize: 16,
     fontFamily: 'Outfit-Regular',
     color: '#2C3E50',
+  },
+  clearButton: {
+    padding: 8,
+  },
+  filterButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  filterButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  filterButtonText: {
+    fontSize: 14,
+    fontFamily: 'Outfit-Bold',
+    color: '#2C3E50',
+    marginLeft: 8,
   },
   addProductContainer: {
     backgroundColor: '#fff',
     margin: 16,
-    padding: 16,
-    borderRadius: 12,
+    padding: 20,
+    borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -602,35 +749,53 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: 'Outfit-Bold',
     color: '#2C3E50',
-    marginBottom: 16,
+    marginBottom: 20,
+  },
+  formScrollView: {
+    flex: 1,
   },
   imageSection: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
+  },
+  imageContainer: {
+    position: 'relative',
   },
   productImage: {
     width: 150,
     height: 150,
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 12,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    padding: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 18,
   },
   imagePlaceholder: {
     width: 150,
     height: 150,
-    borderRadius: 12,
+    borderRadius: 16,
     backgroundColor: '#F8F9FA',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderStyle: 'dashed',
   },
   imagePlaceholderText: {
     fontSize: 14,
     fontFamily: 'Outfit-Regular',
     color: '#999',
     marginTop: 8,
+    textAlign: 'center',
   },
   imageButtons: {
     flexDirection: 'row',
@@ -640,60 +805,76 @@ const styles = StyleSheet.create({
   imageButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#FF9F43',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#FFF5E6',
   },
   imageButtonText: {
-    marginLeft: 4,
-    fontSize: 12,
-    fontFamily: 'Outfit-Regular',
+    marginLeft: 8,
+    fontSize: 14,
+    fontFamily: 'Outfit-Bold',
     color: '#FF9F43',
   },
   inputContainer: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 25,
-    marginBottom: 12,
-    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontFamily: 'Outfit-Bold',
+    color: '#2C3E50',
+    marginBottom: 8,
+    marginLeft: 4,
   },
   input: {
-    height: 45,
-    fontSize: 14,
+    height: 50,
+    fontSize: 16,
     fontFamily: 'Outfit-Regular',
     color: '#2C3E50',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#eee',
   },
   inputError: {
     borderColor: '#FF3B30',
-    borderWidth: 1,
   },
   errorText: {
     color: '#FF3B30',
     fontSize: 12,
     fontFamily: 'Outfit-Regular',
     marginTop: 4,
-    marginLeft: 16,
+    marginLeft: 4,
   },
   formButtons: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginTop: 16,
-    gap: 8,
+    marginTop: 24,
+    gap: 12,
   },
   button: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 25,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelButton: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   saveButton: {
     backgroundColor: '#FF9F43',
   },
-  buttonText: {
+  cancelButtonText: {
+    color: '#2C3E50',
+    fontSize: 16,
+    fontFamily: 'Outfit-Bold',
+  },
+  saveButtonText: {
     color: '#fff',
     fontSize: 16,
     fontFamily: 'Outfit-Bold',
@@ -704,66 +885,122 @@ const styles = StyleSheet.create({
   },
   productCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
   },
-  productListImage: {
+  productMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  productImageWrapper: {
     width: 60,
     height: 60,
-    borderRadius: 8,
-    marginRight: 12,
+    borderRadius: 12,
+    marginRight: 16,
+    overflow: 'hidden',
+  },
+  productListImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
   },
   productListImagePlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
     backgroundColor: '#F8F9FA',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
   },
   productInfo: {
     flex: 1,
+    marginRight: 8,
   },
   productName: {
     fontSize: 16,
     fontFamily: 'Outfit-Bold',
     color: '#2C3E50',
   },
+  categoryPill: {
+    backgroundColor: 'rgba(255, 159, 67, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
   productCategory: {
     fontSize: 12,
-    fontFamily: 'Outfit-Regular',
-    color: '#666',
-    marginTop: 4,
-  },
-  productDetails: {
-    alignItems: 'flex-end',
+    fontFamily: 'Outfit-Bold',
+    color: '#FF9F43',
   },
   productPrice: {
     fontSize: 16,
     fontFamily: 'Outfit-Bold',
     color: '#4CAF50',
+    marginTop: 4,
   },
   productActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 4,
   },
-  editButton: {
-    padding: 8,
+  actionButton: {
+    padding: 10,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
   },
-  deleteButton: {
-    padding: 8,
-  },
-  loader: {
+  loaderContainer: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
   },
+  loader: {
+    marginBottom: 16,
+  },
+  loaderText: {
+    fontSize: 16,
+    fontFamily: 'Outfit-Regular',
+    color: '#666',
+  },
+  emptyProducts: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyProductsText: {
+    fontSize: 16,
+    fontFamily: 'Outfit-Regular',
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  addFirstButton: {
+    backgroundColor: '#FF9F43',
+    padding: 16,
+    borderRadius: 12,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  addFirstButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: 'Outfit-Bold',
+    marginLeft: 8,
+  }
 }); 

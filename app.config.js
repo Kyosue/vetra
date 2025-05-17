@@ -1,6 +1,8 @@
 module.exports = {
   expo: {
-    name: "vetra",
+    name: "Vetra POS",
+    slug: "vetrapos",
+    owner: "reymundabelgas",
     icon: "./assets/images/vetra-app-icon.png",
     splash: {
       image: "./assets/images/vetra.png",
@@ -17,7 +19,7 @@ module.exports = {
     extra: {
       expoPublicApiUrl: process.env.EXPO_PUBLIC_API_URL,
       eas: {
-        projectId: "6d5d5cb8-f544-4eb7-a748-daed7c78afb2"
+        projectId: "b96f60d1-891d-4a00-a6a4-a5c666859f80"
       }
     },
     plugins: [

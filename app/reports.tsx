@@ -25,6 +25,9 @@ import {
 import { BarChart, LineChart } from 'react-native-chart-kit';
 import { salesService } from './services/api';
 
+// Get screen dimensions for responsive layout
+const { width } = Dimensions.get('window');
+
 interface ReportData {
   dailySales: number;
   weeklySales: number;
@@ -55,59 +58,33 @@ export default function ReportsScreen() {
     'Outfit-Bold': require('../assets/fonts/Outfit-Bold.ttf'),
   });
 
+  // Format currency with thousands separators
+  const formatCurrency = (amount: number): string => {
+    return amount.toLocaleString('en-PH', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  };
+
   const requestPermissions = async () => {
     try {
-      console.log('Starting permission request...');
       if (Platform.OS === 'ios') {
-        console.log('Requesting iOS permissions...');
-        const { status: mediaStatus } = await MediaLibrary.requestPermissionsAsync(false);
-        console.log('iOS Media Library permission status:', mediaStatus);
-        
-        setPermissionStatus(mediaStatus);
-        setHasPermission(mediaStatus === 'granted');
-        return mediaStatus === 'granted';
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        setPermissionStatus(status);
+        setHasPermission(status === 'granted');
+        return status === 'granted';
       } else {
-        console.log('Requesting Android permissions...');
-        // For Android, we need to request permissions one by one
-        const mediaPermission = await MediaLibrary.requestPermissionsAsync(false);
-        console.log('Media Library permission:', mediaPermission);
+        // For Android, we need both MediaLibrary and Storage permissions
+        const permissions = await Promise.all([
+          MediaLibrary.requestPermissionsAsync(),
+          PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE),
+          PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE)
+        ]);
 
-        if (mediaPermission.status !== 'granted') {
-          console.log('Media Library permission denied');
-          return false;
-        }
-
-        // Request storage permissions
-        const writePermission = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-          {
-            title: "Storage Permission Required",
-            message: "Vetra needs access to your storage to save reports",
-            buttonNeutral: "Ask Me Later",
-            buttonNegative: "Cancel",
-            buttonPositive: "OK"
-          }
+        const allGranted = permissions.every(
+          permission => permission === 'granted' || permission === PermissionsAndroid.RESULTS.GRANTED
         );
-        console.log('Write permission:', writePermission);
 
-        const readPermission = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-          {
-            title: "Storage Permission Required",
-            message: "Vetra needs access to your storage to save reports",
-            buttonNeutral: "Ask Me Later",
-            buttonNegative: "Cancel",
-            buttonPositive: "OK"
-          }
-        );
-        console.log('Read permission:', readPermission);
-
-        const allGranted = 
-          mediaPermission.status === 'granted' &&
-          writePermission === PermissionsAndroid.RESULTS.GRANTED &&
-          readPermission === PermissionsAndroid.RESULTS.GRANTED;
-
-        console.log('All permissions granted:', allGranted);
         setPermissionStatus(allGranted ? 'granted' : 'denied');
         setHasPermission(allGranted);
         return allGranted;
@@ -120,25 +97,25 @@ export default function ReportsScreen() {
     }
   };
 
+  useEffect(() => {
+    requestPermissions();
+  }, []);
+
   const handlePermissionRequest = async () => {
-    console.log('Handling permission request...');
     const granted = await requestPermissions();
     
     if (!granted) {
-      console.log('Permissions not granted, showing alert...');
       Alert.alert(
         'Permission Required',
         'Storage permission is required to save reports. Would you like to grant permission?',
         [
           {
             text: 'Not Now',
-            style: 'cancel',
-            onPress: () => console.log('Permission denied by user')
+            style: 'cancel'
           },
           {
             text: 'Open Settings',
             onPress: () => {
-              console.log('Opening settings...');
               if (Platform.OS === 'ios') {
                 Linking.openSettings();
               } else {
@@ -150,47 +127,8 @@ export default function ReportsScreen() {
       );
       return false;
     }
-    console.log('Permissions granted successfully');
     return true;
   };
-
-  useEffect(() => {
-    const checkInitialPermissions = async () => {
-      console.log('Checking initial permissions...');
-      if (Platform.OS === 'ios') {
-        const { status } = await MediaLibrary.getPermissionsAsync();
-        console.log('iOS initial permission status:', status);
-        setPermissionStatus(status);
-        setHasPermission(status === 'granted');
-      } else {
-        try {
-          const mediaStatus = await MediaLibrary.getPermissionsAsync();
-          const writeStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
-          const readStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
-          
-          console.log('Android initial permissions:', {
-            media: mediaStatus.status,
-            write: writeStatus,
-            read: readStatus
-          });
-
-          const allGranted = 
-            mediaStatus.status === 'granted' &&
-            writeStatus &&
-            readStatus;
-
-          setPermissionStatus(allGranted ? 'granted' : 'denied');
-          setHasPermission(allGranted);
-        } catch (error) {
-          console.error('Error checking Android permissions:', error);
-          setPermissionStatus('denied');
-          setHasPermission(false);
-        }
-      }
-    };
-
-    checkInitialPermissions();
-  }, []);
 
   useEffect(() => {
     fetchReportData();
@@ -295,143 +233,190 @@ export default function ReportsScreen() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return `₱${amount.toFixed(2)}`;
-  };
-
   const handleDownload = async () => {
-    console.log('Download button pressed');
-    if (!reportFile) {
-      console.log('No report file available');
-      return;
-    }
+    if (!reportFile) return;
     
     try {
-      console.log('Checking permissions...');
-      // Check and request permissions first
+      console.log('Starting direct download with reportFile:', reportFile.name);
+      
+      // Request permissions first
       if (!hasPermission) {
-        console.log('No permission, requesting...');
         const granted = await handlePermissionRequest();
         if (!granted) {
-          console.log('Permission not granted');
+          Alert.alert('Permission Denied', 'Cannot save without storage permission');
+          return;
+        }
+      }
+      
+      // Double-check permissions - since this is critical for download
+      const permissions = await MediaLibrary.getPermissionsAsync();
+      if (!permissions.granted) {
+        const newPermissions = await MediaLibrary.requestPermissionsAsync();
+        if (!newPermissions.granted) {
+          Alert.alert(
+            'Storage Permission Required',
+            'Please grant storage permission to save files',
+            [{ text: 'OK' }]
+          );
           return;
         }
       }
 
-      console.log('Permission granted, proceeding with download');
-      console.log('Platform:', Platform.OS);
-      console.log('Report file:', reportFile);
-
       if (Platform.OS === 'android') {
         try {
-          // First verify the source file exists
-          const sourceFileInfo = await FileSystem.getInfoAsync(reportFile.uri);
-          console.log('Source file info:', sourceFileInfo);
+          console.log('Direct Android download started');
           
-          if (!sourceFileInfo.exists) {
-            throw new Error('Source file does not exist');
+          // Ensure file exists
+          const fileInfo = await FileSystem.getInfoAsync(reportFile.uri);
+          console.log('Source file info:', JSON.stringify(fileInfo));
+          
+          if (!fileInfo.exists) {
+            throw new Error('Report file does not exist at: ' + reportFile.uri);
           }
-
-          // Create a directory for reports if it doesn't exist
-          const reportDir = `${FileSystem.documentDirectory}reports/`;
-          console.log('Creating report directory at:', reportDir);
           
-          const dirInfo = await FileSystem.getInfoAsync(reportDir);
-          if (!dirInfo.exists) {
-            await FileSystem.makeDirectoryAsync(reportDir, { intermediates: true });
+          // On Android, we'll try multiple approaches
+          
+          // APPROACH 1: Save directly from the generated file
+          try {
+            console.log('Trying direct MediaLibrary save...');
+            const directAsset = await MediaLibrary.createAssetAsync(reportFile.uri);
+            if (directAsset) {
+              console.log('Direct save successful!');
+              Alert.alert(
+                'Success',
+                'Report saved successfully to your device!',
+                [{ text: 'OK', onPress: () => setShowModal(false) }]
+              );
+              return;
+            }
+          } catch (directError) {
+            console.log('Direct save failed, trying alternative:', directError);
           }
-
-          // Create a temporary location in the reports directory
-          const tempUri = `${reportDir}${reportFile.name}`;
-          console.log('Saving to temporary location:', tempUri);
           
-          // Copy to temporary location
+          // APPROACH 2: Try external directory (can be accessed by other apps)
+          try {
+            // Use external directory which might be accessible in some Android versions
+            if (FileSystem.StorageAccessFramework) {
+              const externalPath = `${FileSystem.documentDirectory}downloads/`;
+              // Create the directory if it doesn't exist
+              const dirInfo = await FileSystem.getInfoAsync(externalPath);
+              if (!dirInfo.exists) {
+                await FileSystem.makeDirectoryAsync(externalPath, { intermediates: true });
+              }
+              
+              const downloadPath = `${externalPath}${reportFile.name}`;
+              console.log('Trying to save to external directory:', downloadPath);
+              
+              await FileSystem.copyAsync({
+                from: reportFile.uri,
+                to: downloadPath
+              });
+              
+              // Check if successful
+              const downloadedFile = await FileSystem.getInfoAsync(downloadPath);
+              if (downloadedFile.exists) {
+                console.log('Successfully saved to external directory!');
+                Alert.alert(
+                  'Success',
+                  'Report saved successfully to your device!',
+                  [{ text: 'OK', onPress: () => setShowModal(false) }]
+                );
+                return;
+              }
+            }
+          } catch (downloadError) {
+            console.log('External directory save failed:', downloadError);
+          }
+          
+          // APPROACH 3: Use document directory as intermediary
+          console.log('Trying document directory approach...');
+          const tmpFilePath = `${FileSystem.documentDirectory}${reportFile.name}`;
+          
+          // Clear any existing file first
+          try {
+            const existingFile = await FileSystem.getInfoAsync(tmpFilePath);
+            if (existingFile.exists) {
+              await FileSystem.deleteAsync(tmpFilePath, { idempotent: true });
+            }
+          } catch (e) { /* ignore deletion errors */ }
+          
+          // Copy file to document directory
           await FileSystem.copyAsync({
             from: reportFile.uri,
-            to: tempUri
+            to: tmpFilePath
           });
-
-          // Verify the temporary file
-          const tempFileInfo = await FileSystem.getInfoAsync(tempUri);
-          console.log('Temporary file info:', tempFileInfo);
           
-          if (!tempFileInfo.exists) {
-            throw new Error('Failed to create temporary file');
+          // Verify copy succeeded
+          const tmpFileInfo = await FileSystem.getInfoAsync(tmpFilePath);
+          if (!tmpFileInfo.exists) {
+            throw new Error('Failed to copy file to accessible location');
           }
-
-          // Save to media library
-          console.log('Saving to media library...');
-          const asset = await MediaLibrary.createAssetAsync(tempUri);
-          console.log('Asset created:', asset);
           
-          if (!asset) {
-            throw new Error('Failed to create asset in media library');
-          }
-
-          // Try to create the album and add the asset
-          try {
-            console.log('Adding to album...');
-            const album = await MediaLibrary.getAlbumAsync('Vetra POS Reports');
-            if (album === null) {
-              await MediaLibrary.createAlbumAsync('Vetra POS Reports', asset, false);
-              console.log('New album created');
-            } else {
-              await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-              console.log('Added to existing album');
+          // Save to media library from document directory
+          console.log('Saving from document directory to media library...');
+          const asset = await MediaLibrary.createAssetAsync(tmpFilePath);
+          
+          if (asset) {
+            console.log('Media library save successful!');
+            
+            // Try to move to a specific album
+            try {
+              const album = await MediaLibrary.getAlbumAsync('Vetra POS Reports');
+              if (album === null) {
+                await MediaLibrary.createAlbumAsync('Vetra POS Reports', asset, false);
+              } else {
+                await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+              }
+            } catch (albumError) {
+              console.log('Album operation failed, but file was saved:', albumError);
             }
-          } catch (albumError) {
-            console.log('Album operation failed, but file was saved:', albumError);
+            
+            Alert.alert(
+              'Success',
+              'Report saved successfully to your device!',
+              [{ text: 'OK', onPress: () => setShowModal(false) }]
+            );
+          } else {
+            throw new Error('Failed to create media library asset');
           }
-
-          // Clean up the temporary file
-          console.log('Cleaning up temporary file...');
-          await FileSystem.deleteAsync(tempUri, { idempotent: true });
-
-          Alert.alert(
-            'Success',
-            'Report saved successfully!',
-            [
-              {
-                text: 'View',
-                onPress: async () => {
-                  try {
-                    await Linking.openURL(asset.uri);
-                    setShowModal(false);
-                  } catch (err) {
-                    console.log('Error opening file:', err);
-                    Alert.alert('Note', 'The file has been saved. You can find it in your Gallery or Documents folder.');
-                  }
-                },
-              },
-              {
-                text: 'Close',
-                onPress: () => setShowModal(false),
-                style: 'cancel',
-              },
-            ]
-          );
         } catch (err) {
-          console.error('Download error:', err);
-          throw new Error(`Save failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          console.error('Android save error:', err);
+          throw err;
         }
-      } else {
-        // For iOS, use the sharing dialog
-        console.log('Using iOS sharing dialog');
-        await Sharing.shareAsync(reportFile.uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Save Report',
-          UTI: 'com.adobe.pdf'
-        });
-        setShowModal(false);
+      } else if (Platform.OS === 'ios') {
+        // For iOS, direct access to the file system is limited
+        // We'll use the document directory for temporary storage 
+        // and then let the user save it via UIDocumentInteractionController
+        
+        try {
+          const iosPath = `${FileSystem.documentDirectory}${reportFile.name}`;
+          console.log('iOS: Copying to document directory:', iosPath);
+          
+          await FileSystem.copyAsync({
+            from: reportFile.uri,
+            to: iosPath
+          });
+          
+          await Sharing.shareAsync(iosPath, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'Save Report',
+            UTI: 'com.adobe.pdf'
+          });
+          setShowModal(false);
+        } catch (iosError) {
+          console.error('iOS save error:', iosError);
+          throw iosError;
+        }
       }
     } catch (error) {
-      console.error('Error during download:', error);
+      console.error('Download error:', error);
+      
       Alert.alert(
-        'Error',
-        `Unable to save the report: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+        'Error Saving File',
+        'Could not save the report directly to your device.',
         [
           {
-            text: 'Retry',
+            text: 'Try Again',
             onPress: handleDownload
           },
           {
@@ -459,11 +444,48 @@ export default function ReportsScreen() {
       Alert.alert('Error', 'Failed to share the report');
     }
   };
+  
+  const handleSaveToDevice = async () => {
+    if (!reportFile) return;
+    
+    try {
+      // Show a helpful dialog first with instructions
+      Alert.alert(
+        'Save PDF to Device',
+        'When the share menu appears:\n\n1. Look for options like Files, Drive, or your file manager app\n2. Select a location like Documents or Downloads\n3. Some devices have options like "Save to Files" or "Save to Device"\n\nDo you want to continue?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Continue',
+            onPress: async () => {
+              try {
+                await Sharing.shareAsync(reportFile.uri, {
+                  mimeType: 'application/pdf',
+                  dialogTitle: 'Save to Device',
+                  UTI: 'com.adobe.pdf'
+                });
+                setShowModal(false);
+              } catch (shareError) {
+                console.error('Error during save:', shareError);
+                Alert.alert('Error', 'Failed to open save dialog');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error in save to device:', error);
+      Alert.alert('Error', 'Failed to save the report');
+    }
+  };
 
   const generatePDF = async () => {
     try {
-      console.log('Starting PDF generation...');
       setLoading(true);
+      console.log('Starting PDF generation');
 
       // Format the current date and time for filename
       const now = new Date();
@@ -479,10 +501,8 @@ export default function ReportsScreen() {
       }).replace(':', '-');
       
       const filename = `vetra-sales-report-${dateStr}-${timeStr}.pdf`;
-      console.log('Generated filename:', filename);
 
       // Create HTML content for the PDF
-      console.log('Creating HTML content...');
       const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -613,17 +633,17 @@ export default function ReportsScreen() {
               <div class="summary-grid">
                 <div class="summary-card">
                   <div class="card-title">Daily Sales</div>
-                  <div class="card-value">${formatCurrency(reportData.dailySales)}</div>
+                  <div class="card-value">₱${formatCurrency(reportData.dailySales)}</div>
                   <div class="card-subtitle">Today's Revenue</div>
                 </div>
                 <div class="summary-card">
                   <div class="card-title">Weekly Sales</div>
-                  <div class="card-value">${formatCurrency(reportData.weeklySales)}</div>
+                  <div class="card-value">₱${formatCurrency(reportData.weeklySales)}</div>
                   <div class="card-subtitle">Last 7 Days</div>
                 </div>
                 <div class="summary-card">
                   <div class="card-title">Monthly Sales</div>
-                  <div class="card-value">${formatCurrency(reportData.monthlySales)}</div>
+                  <div class="card-value">₱${formatCurrency(reportData.monthlySales)}</div>
                   <div class="card-subtitle">Last 30 Days</div>
                 </div>
               </div>
@@ -643,7 +663,7 @@ export default function ReportsScreen() {
                     ${reportData.dailyTrend.map(item => `
                       <tr>
                         <td>${item.date}</td>
-                        <td>${formatCurrency(item.amount)}</td>
+                        <td>₱${formatCurrency(item.amount)}</td>
                       </tr>
                     `).join('')}
                   </tbody>
@@ -665,7 +685,7 @@ export default function ReportsScreen() {
                     ${reportData.weeklyDistribution.map(item => `
                       <tr>
                         <td>${item.day}</td>
-                        <td>${formatCurrency(item.amount)}</td>
+                        <td>₱${formatCurrency(item.amount)}</td>
                       </tr>
                     `).join('')}
                   </tbody>
@@ -687,7 +707,7 @@ export default function ReportsScreen() {
                     ${reportData.monthlyBreakdown.map(item => `
                       <tr>
                         <td>${item.month}</td>
-                        <td>${formatCurrency(item.amount)}</td>
+                        <td>₱${formatCurrency(item.amount)}</td>
                       </tr>
                     `).join('')}
                   </tbody>
@@ -704,19 +724,16 @@ export default function ReportsScreen() {
       `;
 
       // Generate PDF
-      console.log('Calling printToFileAsync...');
+      console.log('Calling printToFileAsync');
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,
-        base64: false,
-        width: 612, // Standard US Letter width in points (8.5 inches * 72)
-        height: 792 // Standard US Letter height in points (11 inches * 72)
+        base64: false
       });
       console.log('PDF generated at:', uri);
 
       // Set the report file info and show modal
-      const reportFileInfo = { uri, name: filename };
-      console.log('Setting report file:', reportFileInfo);
-      setReportFile(reportFileInfo);
+      setReportFile({ uri, name: filename });
+      console.log('Setting report file:', { uri, name: filename });
       setShowModal(true);
 
     } catch (error) {
@@ -738,11 +755,12 @@ export default function ReportsScreen() {
       borderRadius: 16
     },
     propsForLabels: {
-      fontSize: 12
+      fontSize: 12,
+      fontFamily: 'Outfit-Regular',
     }
   };
 
-  const screenWidth = Dimensions.get('window').width - 32; // 32 is total horizontal padding
+  const screenWidth = Dimensions.get('window').width - 40; // 40 is total horizontal padding
 
   const getCommonChartProps = () => ({
     width: screenWidth,
@@ -765,25 +783,35 @@ export default function ReportsScreen() {
       
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity 
+          onPress={() => router.back()} 
+          style={styles.backButton}
+        >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Reports</Text>
         <View style={styles.headerRight}>
-          <TouchableOpacity onPress={generatePDF} style={styles.pdfButton}>
-            <Ionicons name="document-text-outline" size={24} color="#fff" />
+          <TouchableOpacity 
+            onPress={generatePDF} 
+            style={styles.headerButton}
+          >
+            <Ionicons name="document-text-outline" size={22} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={fetchReportData} style={styles.refreshButton}>
-            <Ionicons name="refresh" size={24} color="#fff" />
+          <TouchableOpacity 
+            onPress={fetchReportData} 
+            style={styles.headerButton}
+          >
+            <Ionicons name="refresh" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Main Content */}
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#FF9F43" />
+            <ActivityIndicator size="large" color="#FF9F43" style={styles.loader} />
+            <Text style={styles.loaderText}>Loading report data...</Text>
           </View>
         ) : (
           <>
@@ -793,39 +821,39 @@ export default function ReportsScreen() {
                   <Text style={styles.sectionTitle}>Sales Overview</Text>
                   <Text style={styles.sectionSubtitle}>Revenue summary</Text>
                 </View>
-                <View style={[styles.sectionIconContainer, { backgroundColor: '#FFF5EB' }]}>
+                <View style={styles.sectionIconContainer}>
                   <Ionicons name="trending-up" size={20} color="#FF9F43" />
                 </View>
               </View>
               <View style={styles.reportGrid}>
                 <View style={styles.reportCard}>
                   <View style={styles.reportHeader}>
-                    <View style={[styles.reportIconContainer, { backgroundColor: '#FFF5EB' }]}>
-                      <Ionicons name="cash-outline" size={20} color="#FF9F43" />
+                    <View style={styles.reportIconContainer}>
+                      <Ionicons name="today-outline" size={20} color="#FF9F43" />
                     </View>
                     <Text style={styles.reportTitle}>Daily Sales</Text>
                   </View>
-                  <Text style={styles.reportValue}>{formatCurrency(reportData.dailySales)}</Text>
+                  <Text style={styles.reportValue}>₱{formatCurrency(reportData.dailySales)}</Text>
                   <Text style={styles.reportSubtitle}>Today's Revenue</Text>
                 </View>
                 <View style={styles.reportCard}>
                   <View style={styles.reportHeader}>
-                    <View style={[styles.reportIconContainer, { backgroundColor: '#FFF5EB' }]}>
-                      <Ionicons name="cash-outline" size={20} color="#FF9F43" />
+                    <View style={styles.reportIconContainer}>
+                      <Ionicons name="calendar-outline" size={20} color="#4CAF50" />
                     </View>
                     <Text style={styles.reportTitle}>Weekly Sales</Text>
                   </View>
-                  <Text style={styles.reportValue}>{formatCurrency(reportData.weeklySales)}</Text>
+                  <Text style={[styles.reportValue, {color: '#4CAF50'}]}>₱{formatCurrency(reportData.weeklySales)}</Text>
                   <Text style={styles.reportSubtitle}>Last 7 Days</Text>
                 </View>
                 <View style={styles.reportCard}>
                   <View style={styles.reportHeader}>
-                    <View style={[styles.reportIconContainer, { backgroundColor: '#FFF5EB' }]}>
-                      <Ionicons name="cash-outline" size={20} color="#FF9F43" />
+                    <View style={[styles.reportIconContainer, {backgroundColor: '#E3F2FD'}]}>
+                      <Ionicons name="calendar" size={20} color="#2196F3" />
                     </View>
                     <Text style={styles.reportTitle}>Monthly Sales</Text>
                   </View>
-                  <Text style={styles.reportValue}>{formatCurrency(reportData.monthlySales)}</Text>
+                  <Text style={[styles.reportValue, {color: '#2196F3'}]}>₱{formatCurrency(reportData.monthlySales)}</Text>
                   <Text style={styles.reportSubtitle}>Last 30 Days</Text>
                 </View>
               </View>
@@ -839,7 +867,7 @@ export default function ReportsScreen() {
                   <Text style={styles.sectionSubtitle}>Last 7 days</Text>
                 </View>
               </View>
-              <View style={[styles.chartContainer as any]}>
+              <View style={styles.chartContainer}>
                 <LineChart
                   {...getCommonChartProps()}
                   data={{
@@ -851,7 +879,7 @@ export default function ReportsScreen() {
                     }]
                   }}
                   bezier
-                  withDots={false}
+                  withDots={true}
                   withVerticalLines={false}
                 />
               </View>
@@ -865,7 +893,7 @@ export default function ReportsScreen() {
                   <Text style={styles.sectionSubtitle}>Sales by day of week</Text>
                 </View>
               </View>
-              <View style={[styles.chartContainer as any]}>
+              <View style={styles.chartContainer}>
                 <BarChart
                   {...getCommonChartProps()}
                   data={{
@@ -890,7 +918,7 @@ export default function ReportsScreen() {
                   <Text style={styles.sectionSubtitle}>Last 6 months</Text>
                 </View>
               </View>
-              <View style={[styles.chartContainer as any]}>
+              <View style={styles.chartContainer}>
                 <BarChart
                   {...getCommonChartProps()}
                   data={{
@@ -920,25 +948,27 @@ export default function ReportsScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Ionicons name="checkmark-circle" size={40} color="#4CAF50" />
+              <View style={styles.modalIconContainer}>
+                <Ionicons name="checkmark-circle" size={40} color="#4CAF50" />
+              </View>
               <Text style={styles.modalTitle}>Report Generated</Text>
               <Text style={styles.modalSubtitle}>What would you like to do with the report?</Text>
             </View>
 
             <TouchableOpacity 
-              style={[styles.modalButton, { backgroundColor: '#4CAF50' }]}
-              onPress={handleDownload}
+              style={styles.modalButton}
+              onPress={handleSaveToDevice}
             >
-              <Ionicons name="download-outline" size={24} color="#fff" />
-              <Text style={[styles.modalButtonText, { color: '#fff' }]}>Download</Text>
+              <Ionicons name="download-outline" size={24} color="#2C3E50" />
+              <Text style={styles.modalButtonText}>Save to Device</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={[styles.modalButton, { backgroundColor: '#2196F3' }]}
+              style={styles.modalButton}
               onPress={handleShare}
             >
-              <Ionicons name="share-social-outline" size={24} color="#fff" />
-              <Text style={[styles.modalButtonText, { color: '#fff' }]}>Share</Text>
+              <Ionicons name="share-social-outline" size={24} color="#2C3E50" />
+              <Text style={styles.modalButtonText}>Share Report</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
@@ -973,12 +1003,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  pdfButton: {
+  headerButton: {
     padding: 8,
     marginRight: 8,
-  },
-  refreshButton: {
-    padding: 8,
   },
   headerTitle: {
     fontSize: 20,
@@ -994,6 +1021,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+  },
+  loader: {
+    marginBottom: 12,
+  },
+  loaderText: {
+    fontSize: 14,
+    fontFamily: 'Outfit-Regular',
+    color: '#666',
+    textAlign: 'center',
   },
   section: {
     marginBottom: 32,
@@ -1097,6 +1133,9 @@ const styles = StyleSheet.create({
   modalHeader: {
     alignItems: 'center',
     marginBottom: 24,
+  },
+  modalIconContainer: {
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 24,
