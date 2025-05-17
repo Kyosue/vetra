@@ -68,13 +68,26 @@ export default function LoginScreen() {
       await authService.login(username, password);
       router.replace('/home');
     } catch (error: any) {
+      console.log('Login error:', error.message);
       const errorMessage = error.message?.toLowerCase() || '';
-      if (errorMessage.includes('invalid credentials') || error.status === 401) {
+      
+      // Handle specific API error messages first
+      if (errorMessage.includes('invalid credentials')) {
         setError('Invalid username or password');
         setPasswordError('Please check your password');
         setUsernameError('Please check your username');
+      } else if (errorMessage.includes('no authentication token')) {
+        setError('Authentication failed. Please try logging in again.');
+      } else if (!navigator.onLine) {
+        setError('No internet connection. Please check your network.');
+      } else if (errorMessage.includes('failed to fetch')) {
+        setError('Unable to reach the server. Please try again.');
+      } else if (errorMessage.startsWith('server error:')) {
+        // Only set generic server error if the message explicitly indicates a server error
+        setError('Server error occurred. Please try again later.');
       } else {
-        setError('Failed to connect to server. Please try again.');
+        // For any other error, show the actual error message
+        setError(error.message || 'An unexpected error occurred.');
       }
     } finally {
       setLoading(false);

@@ -8,17 +8,31 @@
     "scheme": "vetrapos",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/vetra.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": "./assets/images/vetra-app-icon.png",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "We need access to save reports to your photo library",
+        "NSPhotoLibraryAddUsageDescription": "We need access to save reports to your photo library"
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/vetra.png",
-        "backgroundColor": "#000000"
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#FF9F43"
       },
+      "icon": "./assets/images/vetra-app-icon.png",
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.MEDIA_LIBRARY"
       ],
       "package": "com.reymundabelgas.Vetra"
     },
@@ -38,7 +52,8 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-barcode-scanner"
+      "expo-barcode-scanner",
+      "expo-media-library"
     ],
     "experiments": {
       "typedRoutes": true

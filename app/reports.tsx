@@ -40,6 +40,7 @@ export default function ReportsScreen() {
   const [showModal, setShowModal] = useState(false);
   const [reportFile, setReportFile] = useState<{ uri: string; name: string } | null>(null);
   const [hasPermission, setHasPermission] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState<'undetermined' | 'granted' | 'denied'>('undetermined');
   const [reportData, setReportData] = useState<ReportData>({
     dailySales: 0,
     weeklySales: 0,
@@ -54,36 +55,141 @@ export default function ReportsScreen() {
     'Outfit-Bold': require('../assets/fonts/Outfit-Bold.ttf'),
   });
 
-  useEffect(() => {
-    (async () => {
-      if (Platform.OS === 'android') {
-        try {
-          // Request both MediaLibrary and Storage permissions
-          const permissions = await Promise.all([
-            MediaLibrary.requestPermissionsAsync(),
-            PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE),
-            PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE)
-          ]);
+  const requestPermissions = async () => {
+    try {
+      console.log('Starting permission request...');
+      if (Platform.OS === 'ios') {
+        console.log('Requesting iOS permissions...');
+        const { status: mediaStatus } = await MediaLibrary.requestPermissionsAsync(false);
+        console.log('iOS Media Library permission status:', mediaStatus);
+        
+        setPermissionStatus(mediaStatus);
+        setHasPermission(mediaStatus === 'granted');
+        return mediaStatus === 'granted';
+      } else {
+        console.log('Requesting Android permissions...');
+        // For Android, we need to request permissions one by one
+        const mediaPermission = await MediaLibrary.requestPermissionsAsync(false);
+        console.log('Media Library permission:', mediaPermission);
 
-          const allGranted = permissions.every(
-            permission => permission === 'granted' || permission === PermissionsAndroid.RESULTS.GRANTED
-          );
+        if (mediaPermission.status !== 'granted') {
+          console.log('Media Library permission denied');
+          return false;
+        }
 
-          setHasPermission(allGranted);
-
-          if (!allGranted) {
-            Alert.alert(
-              'Permissions Required',
-              'Storage permissions are required to save reports to your device.',
-              [{ text: 'OK' }]
-            );
+        // Request storage permissions
+        const writePermission = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+          {
+            title: "Storage Permission Required",
+            message: "Vetra needs access to your storage to save reports",
+            buttonNeutral: "Ask Me Later",
+            buttonNegative: "Cancel",
+            buttonPositive: "OK"
           }
+        );
+        console.log('Write permission:', writePermission);
+
+        const readPermission = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+          {
+            title: "Storage Permission Required",
+            message: "Vetra needs access to your storage to save reports",
+            buttonNeutral: "Ask Me Later",
+            buttonNegative: "Cancel",
+            buttonPositive: "OK"
+          }
+        );
+        console.log('Read permission:', readPermission);
+
+        const allGranted = 
+          mediaPermission.status === 'granted' &&
+          writePermission === PermissionsAndroid.RESULTS.GRANTED &&
+          readPermission === PermissionsAndroid.RESULTS.GRANTED;
+
+        console.log('All permissions granted:', allGranted);
+        setPermissionStatus(allGranted ? 'granted' : 'denied');
+        setHasPermission(allGranted);
+        return allGranted;
+      }
+    } catch (error) {
+      console.error('Error requesting permissions:', error);
+      setPermissionStatus('denied');
+      setHasPermission(false);
+      return false;
+    }
+  };
+
+  const handlePermissionRequest = async () => {
+    console.log('Handling permission request...');
+    const granted = await requestPermissions();
+    
+    if (!granted) {
+      console.log('Permissions not granted, showing alert...');
+      Alert.alert(
+        'Permission Required',
+        'Storage permission is required to save reports. Would you like to grant permission?',
+        [
+          {
+            text: 'Not Now',
+            style: 'cancel',
+            onPress: () => console.log('Permission denied by user')
+          },
+          {
+            text: 'Open Settings',
+            onPress: () => {
+              console.log('Opening settings...');
+              if (Platform.OS === 'ios') {
+                Linking.openSettings();
+              } else {
+                Linking.openSettings();
+              }
+            }
+          }
+        ]
+      );
+      return false;
+    }
+    console.log('Permissions granted successfully');
+    return true;
+  };
+
+  useEffect(() => {
+    const checkInitialPermissions = async () => {
+      console.log('Checking initial permissions...');
+      if (Platform.OS === 'ios') {
+        const { status } = await MediaLibrary.getPermissionsAsync();
+        console.log('iOS initial permission status:', status);
+        setPermissionStatus(status);
+        setHasPermission(status === 'granted');
+      } else {
+        try {
+          const mediaStatus = await MediaLibrary.getPermissionsAsync();
+          const writeStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
+          const readStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+          
+          console.log('Android initial permissions:', {
+            media: mediaStatus.status,
+            write: writeStatus,
+            read: readStatus
+          });
+
+          const allGranted = 
+            mediaStatus.status === 'granted' &&
+            writeStatus &&
+            readStatus;
+
+          setPermissionStatus(allGranted ? 'granted' : 'denied');
+          setHasPermission(allGranted);
         } catch (error) {
-          console.error('Error requesting permissions:', error);
+          console.error('Error checking Android permissions:', error);
+          setPermissionStatus('denied');
           setHasPermission(false);
         }
       }
-    })();
+    };
+
+    checkInitialPermissions();
   }, []);
 
   useEffect(() => {
@@ -194,33 +300,51 @@ export default function ReportsScreen() {
   };
 
   const handleDownload = async () => {
-    if (!reportFile) return;
+    console.log('Download button pressed');
+    if (!reportFile) {
+      console.log('No report file available');
+      return;
+    }
     
     try {
-      if (Platform.OS === 'android') {
-        // Check permissions first
-        if (!hasPermission) {
-          Alert.alert(
-            'Permission Required',
-            'Storage permission is required to save reports. Please grant permission in your device settings.',
-            [{ text: 'OK' }]
-          );
+      console.log('Checking permissions...');
+      // Check and request permissions first
+      if (!hasPermission) {
+        console.log('No permission, requesting...');
+        const granted = await handlePermissionRequest();
+        if (!granted) {
+          console.log('Permission not granted');
           return;
         }
+      }
 
-        console.log('Original file:', reportFile);
+      console.log('Permission granted, proceeding with download');
+      console.log('Platform:', Platform.OS);
+      console.log('Report file:', reportFile);
 
+      if (Platform.OS === 'android') {
         try {
           // First verify the source file exists
           const sourceFileInfo = await FileSystem.getInfoAsync(reportFile.uri);
+          console.log('Source file info:', sourceFileInfo);
+          
           if (!sourceFileInfo.exists) {
             throw new Error('Source file does not exist');
           }
 
-          // Create a temporary location in cache directory
-          const tempUri = `${FileSystem.cacheDirectory}temp_${reportFile.name}`;
-          console.log('Creating temporary file at:', tempUri);
+          // Create a directory for reports if it doesn't exist
+          const reportDir = `${FileSystem.documentDirectory}reports/`;
+          console.log('Creating report directory at:', reportDir);
+          
+          const dirInfo = await FileSystem.getInfoAsync(reportDir);
+          if (!dirInfo.exists) {
+            await FileSystem.makeDirectoryAsync(reportDir, { intermediates: true });
+          }
 
+          // Create a temporary location in the reports directory
+          const tempUri = `${reportDir}${reportFile.name}`;
+          console.log('Saving to temporary location:', tempUri);
+          
           // Copy to temporary location
           await FileSystem.copyAsync({
             from: reportFile.uri,
@@ -230,40 +354,42 @@ export default function ReportsScreen() {
           // Verify the temporary file
           const tempFileInfo = await FileSystem.getInfoAsync(tempUri);
           console.log('Temporary file info:', tempFileInfo);
-
+          
           if (!tempFileInfo.exists) {
             throw new Error('Failed to create temporary file');
           }
 
-          // Save to media library with MIME type
+          // Save to media library
+          console.log('Saving to media library...');
           const asset = await MediaLibrary.createAssetAsync(tempUri);
-
           console.log('Asset created:', asset);
-
+          
           if (!asset) {
             throw new Error('Failed to create asset in media library');
           }
 
           // Try to create the album and add the asset
           try {
+            console.log('Adding to album...');
             const album = await MediaLibrary.getAlbumAsync('Vetra POS Reports');
             if (album === null) {
               await MediaLibrary.createAlbumAsync('Vetra POS Reports', asset, false);
-              console.log('New album created and asset added');
+              console.log('New album created');
             } else {
               await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-              console.log('Asset added to existing album');
+              console.log('Added to existing album');
             }
-          } catch (albumError: any) {
+          } catch (albumError) {
             console.log('Album operation failed, but file was saved:', albumError);
           }
 
           // Clean up the temporary file
+          console.log('Cleaning up temporary file...');
           await FileSystem.deleteAsync(tempUri, { idempotent: true });
 
           Alert.alert(
             'Success',
-            'Report saved successfully! You can find it in your Gallery or Documents folder.',
+            'Report saved successfully!',
             [
               {
                 text: 'View',
@@ -284,12 +410,13 @@ export default function ReportsScreen() {
               },
             ]
           );
-        } catch (err: any) {
-          console.error('Detailed error during save:', err);
-          throw new Error(`Save failed: ${err.message || 'Unknown error'}`);
+        } catch (err) {
+          console.error('Download error:', err);
+          throw new Error(`Save failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
       } else {
         // For iOS, use the sharing dialog
+        console.log('Using iOS sharing dialog');
         await Sharing.shareAsync(reportFile.uri, {
           mimeType: 'application/pdf',
           dialogTitle: 'Save Report',
@@ -297,14 +424,19 @@ export default function ReportsScreen() {
         });
         setShowModal(false);
       }
-    } catch (error: any) {
-      console.error('Final error handler:', error);
+    } catch (error) {
+      console.error('Error during download:', error);
       Alert.alert(
         'Error',
-        `Unable to save the report: ${error.message}. Please ensure you have granted all necessary permissions.`,
+        `Unable to save the report: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
         [
           {
-            text: 'OK',
+            text: 'Retry',
+            onPress: handleDownload
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
             onPress: () => setShowModal(false)
           }
         ]
@@ -330,6 +462,7 @@ export default function ReportsScreen() {
 
   const generatePDF = async () => {
     try {
+      console.log('Starting PDF generation...');
       setLoading(true);
 
       // Format the current date and time for filename
@@ -346,8 +479,10 @@ export default function ReportsScreen() {
       }).replace(':', '-');
       
       const filename = `vetra-sales-report-${dateStr}-${timeStr}.pdf`;
+      console.log('Generated filename:', filename);
 
       // Create HTML content for the PDF
+      console.log('Creating HTML content...');
       const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -569,13 +704,19 @@ export default function ReportsScreen() {
       `;
 
       // Generate PDF
+      console.log('Calling printToFileAsync...');
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,
-        base64: false
+        base64: false,
+        width: 612, // Standard US Letter width in points (8.5 inches * 72)
+        height: 792 // Standard US Letter height in points (11 inches * 72)
       });
+      console.log('PDF generated at:', uri);
 
       // Set the report file info and show modal
-      setReportFile({ uri, name: filename });
+      const reportFileInfo = { uri, name: filename };
+      console.log('Setting report file:', reportFileInfo);
+      setReportFile(reportFileInfo);
       setShowModal(true);
 
     } catch (error) {
@@ -785,19 +926,19 @@ export default function ReportsScreen() {
             </View>
 
             <TouchableOpacity 
-              style={styles.modalButton}
+              style={[styles.modalButton, { backgroundColor: '#4CAF50' }]}
               onPress={handleDownload}
             >
-              <Ionicons name="download-outline" size={24} color="#2C3E50" />
-              <Text style={styles.modalButtonText}>Download</Text>
+              <Ionicons name="download-outline" size={24} color="#fff" />
+              <Text style={[styles.modalButtonText, { color: '#fff' }]}>Download</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={styles.modalButton}
+              style={[styles.modalButton, { backgroundColor: '#2196F3' }]}
               onPress={handleShare}
             >
-              <Ionicons name="share-social-outline" size={24} color="#2C3E50" />
-              <Text style={styles.modalButtonText}>Share</Text>
+              <Ionicons name="share-social-outline" size={24} color="#fff" />
+              <Text style={[styles.modalButtonText, { color: '#fff' }]}>Share</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 

@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 
 interface AuthResponse {
   token: string;
@@ -41,7 +42,7 @@ interface Sale {
 }
 
 // Use environment variable for API URL, fallback to development URL
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://vetra-l87p.onrender.com/api';
+const API_URL = Constants.expoConfig?.extra?.expoPublicApiUrl || 'https://vetra-l87p.onrender.com/api';
 
 // Navigation utility
 const handleAuthError = async () => {
@@ -74,11 +75,15 @@ const handleResponse = async <T>(response: Response): Promise<T> => {
     try {
       const error = JSON.parse(errorText);
       if (response.status === 401) {
-        await handleAuthError();
+        throw new Error(error.message || 'Invalid credentials');
       }
       throw new Error(error.message || 'Something went wrong');
     } catch (e) {
-      throw new Error(`Server error: ${response.status} ${response.statusText}`);
+      if (e instanceof SyntaxError) {
+        // JSON parse error
+        throw new Error(`Server error: ${response.status} ${response.statusText}`);
+      }
+      throw e; // Re-throw the error if it's our custom error
     }
   }
   return response.json();
